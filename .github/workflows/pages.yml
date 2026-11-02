@@ -1,0 +1,50 @@
+name: Check and publish playground
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+          targets: wasm32-unknown-unknown
+      - name: Format
+        run: |
+          cargo fmt --check
+          rustfmt --edition 2024 --check src/algorithms/*.rs
+      - name: Tests
+        run: cargo test --locked --all-targets
+      - name: Native build
+        run: cargo build --locked
+      - name: Registry discovery test
+        run: ./scripts/test-registry.sh
+      - name: Release WASM
+        run: ./scripts/build-web.sh
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          path: dist
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - uses: actions/deploy-pages@v4
+        id: deployment
